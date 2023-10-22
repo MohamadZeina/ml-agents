@@ -6,6 +6,8 @@ import abc
 import os
 import time
 from threading import RLock
+import wandb
+import json
 
 from mlagents_envs.side_channel.stats_side_channel import StatsAggregationMethod
 
@@ -286,6 +288,38 @@ class TensorboardWriter(StatsWriter):
                 self.summary_writers[category].flush()
 
 
+class CustomJSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, StatsAggregationMethod):
+            # Convert obj to a representation that's JSON serializable
+            return str(obj)
+        return super().default(obj)
+
+
+class WandbWriter(StatsWriter):
+    def __init__(
+        self,
+        config: dict
+    ):
+        """
+        A Weights and Biases Wrapper that will add stats to your wandb.ai board.
+        """
+        wandb.init(reinit=True,
+                   config=config)
+
+    def write_stats(
+        self,
+        category : str,
+        values   : dict,
+        step     : int
+    ) -> None:
+        """
+        Write some stats for a given category and step
+        """
+        for key, value in values.items():
+            #print(f"Going to log {key = }, {value.aggregated_value = }, {step = }")
+            wandb.log({key: value.aggregated_value}, step=step)
+            
 class StatsReporter:
     writers: List[StatsWriter] = []
     stats_dict: Dict[str, Dict[str, List]] = defaultdict(lambda: defaultdict(list))

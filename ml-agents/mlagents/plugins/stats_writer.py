@@ -13,11 +13,30 @@ from mlagents.trainers.stats import StatsWriter
 from mlagents_envs import logging_util
 from mlagents.plugins import ML_AGENTS_STATS_WRITER
 from mlagents.trainers.settings import RunOptions
-from mlagents.trainers.stats import TensorboardWriter, GaugeWriter, ConsoleWriter
+from mlagents.trainers.stats import TensorboardWriter, GaugeWriter, ConsoleWriter, WandbWriter
 
 
 logger = logging_util.get_logger(__name__)
 
+
+# Helper function to check if an object is JSON serializable
+def is_jsonable(x):
+    try:
+        json.dumps(x)
+        return True
+    except:
+        return False
+
+# Convert non-JSON serializable items to string
+def to_json_serializable(d):
+    new_dict = {}
+    for key, value in d.items():
+        if not is_jsonable(key):
+            key = str(key)
+        if not is_jsonable(value):
+            value = str(value)
+        new_dict[key] = value
+    return new_dict
 
 def get_default_stats_writers(run_options: RunOptions) -> List[StatsWriter]:
     """
@@ -25,8 +44,40 @@ def get_default_stats_writers(run_options: RunOptions) -> List[StatsWriter]:
     * A TensorboardWriter to write information to TensorBoard
     * A GaugeWriter to record our internal stats
     * A ConsoleWriter to output to stdout.
+    * A Wandb.AI Writer
     """
     checkpoint_settings = run_options.checkpoint_settings
+    print(f"{run_options.behaviors = }")
+    print(f"{run_options.checkpoint_settings = }")
+    print(f"{run_options.engine_settings = }")
+    print(f"{run_options.environment_parameters = }")
+    print(f"{run_options.env_settings = }")
+    print(f"{run_options.torch_settings = }")
+
+    # Helper function to get attributes of an object as a dictionary
+    def get_attributes(obj):
+        return {attr: getattr(obj, attr) for attr in dir(obj) if not callable(getattr(obj, attr)) and not attr.startswith("__")}
+
+    # Initialize an empty dictionary to store extracted information
+    extracted_data = {}
+
+    # Extract hyperparameters for each behavior
+    for behavior_name, behavior_settings in run_options.behaviors.items():
+        hyperparams = get_attributes(behavior_settings.hyperparameters)
+        behavior_data = get_attributes(behavior_settings)
+        extracted_data.update({f"{key}": val for key, val in hyperparams.items()})
+        extracted_data.update({f"{key}": val for key, val in behavior_data.items()})
+
+    # Extract other settings
+    settings_list = ["engine_settings", "env_settings", "torch_settings"]
+    for setting_name in settings_list:
+        setting_data = get_attributes(getattr(run_options, setting_name))
+        extracted_data.update({f"{setting_name}_{key}": val for key, val in setting_data.items()})
+
+    print(f"{extracted_data = }")
+    extracted_data = to_json_serializable(extracted_data)
+    print(f"After serialisation, {extracted_data = }")
+
     return [
         TensorboardWriter(
             checkpoint_settings.write_path,
@@ -35,6 +86,7 @@ def get_default_stats_writers(run_options: RunOptions) -> List[StatsWriter]:
         ),
         GaugeWriter(),
         ConsoleWriter(),
+        WandbWriter(extracted_data)
     ]
 
 
